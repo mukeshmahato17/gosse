@@ -5,16 +5,21 @@ import "fmt"
 type Stream struct {
 	subscribers []*Subscriber
 	register    chan *Subscriber
-	unregister  chan *Subscriber
+	deregister  chan *Subscriber
 	event       chan []byte
 	quit        chan bool
+}
+
+type StreamRegistration struct {
+	id     string
+	stream *Stream
 }
 
 func NewStream(bufSize int) *Stream {
 	return &Stream{
 		subscribers: make([]*Subscriber, 0),
 		register:    make(chan *Subscriber),
-		unregister:  make(chan *Subscriber),
+		deregister:  make(chan *Subscriber),
 		event:       make(chan []byte, bufSize),
 		quit:        make(chan bool),
 	}
@@ -22,7 +27,7 @@ func NewStream(bufSize int) *Stream {
 
 func (str *Stream) NewSubscriber() *Subscriber {
 	sub := &Subscriber{
-		Quit:       str.unregister,
+		Quit:       str.deregister,
 		Connection: make(chan []byte),
 	}
 
@@ -44,7 +49,7 @@ func (str *Stream) run() {
 				s.subscribers = append(s.subscribers, subscriber)
 
 			// Remove closed subscriber
-			case subscriber := <-s.unregister:
+			case subscriber := <-s.deregister:
 				i := s.getSubIndex(subscriber)
 				if i != -1 {
 					s.removeSubscriber(i)
