@@ -3,6 +3,7 @@ package gosse
 import (
 	"fmt"
 	"net/http"
+	"sync"
 )
 
 const (
@@ -11,47 +12,30 @@ const (
 )
 
 type Server struct {
-	BufferSize       int
-	streams          map[string]*Stream
-	registerStream   chan StreamRegistration
-	deregisterStream chan string
-	quit             chan bool
+	BufferSize    int
+	streams       map[string]*Stream
+	DefaultStream bool
+	mu            sync.Mutex
 }
 
-func NewServer() *Server {
+// New will create a server and setup defaults
+func New() *Server {
 	return &Server{
-		BufferSize:       DefaultBufferSize,
-		streams:          make(map[string]*Stream),
-		registerStream:   make(chan StreamRegistration),
-		deregisterStream: make(chan string),
-		quit:             make(chan bool),
+		BufferSize:    DefaultBufferSize,
+		streams:       make(map[string]*Stream),
+		DefaultStream: false,
 	}
 }
 
-// Start server's internal messaging
-func (s *Server) Start() {
-	go func(s *Server) {
-		for {
-			select {
-			// Add new stream
-			case reg := <-s.registerStream:
-				s.streams[reg.id] = reg.stream
+// Close shuts down the server and close all the streams and connections
+func (s *Server) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-			// remove old stream
-			case id := <-s.deregisterStream:
-				s.streams[id].close()
-				delete(s.streams, id)
-
-			// close all streams
-			case <-s.quit:
-				for id := range s.streams {
-					s.streams[id].quit <- true
-					delete(s.streams, id)
-				}
-				return
-			}
-		}
-	}(s)
+	for id := range s.streams {
+		s.streams[id].quit <- true
+		delete(s.streams, id)
+	}
 }
 
 // HTTPHandler serves a new connection with events for a given stream
@@ -69,15 +53,13 @@ func (s *Server) HTTPHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Get the streamID from
 	streamID := r.URL.Query().Get("streamID")
+	sub := s.getStream(streamID).addSubscriber()
+	defer sub.Close()
 
-	stream := s.GetStream(streamID)
-	if stream == nil {
+	if streamID == "" && !s.DefaultStream {
 		http.Error(w, "stream not found", http.StatusInternalServerError)
 		return
 	}
-
-	sub := stream.NewSubscriber()
-	defer sub.Close()
 
 	notify := w.(http.CloseNotifier).CloseNotify()
 	go func() {
@@ -85,32 +67,46 @@ func (s *Server) HTTPHandler(w http.ResponseWriter, r *http.Request) {
 		sub.Close()
 	}()
 	for {
-		// Write to ResponseWriter
-		// Server Sent Event compatible
 		fmt.Fprintf(w, "data: %s\n\n", <-sub.Connection)
-		// Flush the data immediatly instead of buffering it for later.
 		flusher.Flush()
 	}
 }
 
+// CreateStream will create a new stream and register it
 func (s *Server) CreateStream(id string) *Stream {
-	sr := StreamRegistration{
-		id:     id,
-		stream: NewStream(s.BufferSize),
-	}
-	s.registerStream <- sr
+	str := newStream(s.BufferSize)
+	str.run()
 
-	return sr.stream
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// register that stream
+	s.streams[id] = str
+
+	return str
 }
 
 // RemoveStream will remove all the stream
 func (s *Server) RemoveStream(id string) {
-	s.deregisterStream <- id
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.streams[id].close()
+	delete(s.streams, id)
 }
 
-// GetStream returns a Stream entity based on its id
-func (s *Server) GetStream(id string) *Stream {
-	// Hashmap is unsafe, might cause race condition if register/deredister
-	// run at same time
+// Publish sends a message to every client in a streamID
+// Publish sends an event to every subscribers of the stream
+func (s *Server) Publish(id string, event []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.streams[id].event <- event
+}
+
+func (s *Server) getStream(id string) *Stream {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	return s.streams[id]
 }
