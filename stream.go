@@ -30,7 +30,7 @@ func newStream(bufSize int) *Stream {
 func (str *Stream) addSubscriber() *Subscriber {
 	sub := &Subscriber{
 		quit:       str.deregister,
-		Connection: make(chan []byte, 64),
+		connection: make(chan []byte, 64),
 	}
 
 	str.register <- sub
@@ -58,7 +58,7 @@ func (str *Stream) run() {
 				fmt.Println("got event")
 				for i := range s.subscribers {
 					fmt.Printf("publishing to subscriber %d\n", i)
-					s.subscribers[i].Connection <- event
+					s.subscribers[i].connection <- event
 				}
 
 			// Shutdown if server closes
@@ -74,7 +74,7 @@ func (str *Stream) run() {
 }
 
 func (str *Stream) removeSubscriber(i int) {
-	close(str.subscribers[i].Connection)
+	close(str.subscribers[i].connection)
 	str.subscribers = append(str.subscribers[:i], str.subscribers[i+1:]...)
 }
 

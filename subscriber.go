@@ -2,10 +2,10 @@ package gosse
 
 type Subscriber struct {
 	quit       chan *Subscriber
-	Connection chan []byte
+	connection chan []byte
 }
 
 // Close will let the stream know that the client connection has terminated
-func (sub *Subscriber) Close() {
+func (sub *Subscriber) close() {
 	sub.quit <- sub
 }

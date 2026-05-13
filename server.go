@@ -1,8 +1,6 @@
 package gosse
 
 import (
-	"fmt"
-	"net/http"
 	"sync"
 )
 
@@ -12,18 +10,16 @@ const (
 )
 
 type Server struct {
-	BufferSize    int
-	streams       map[string]*Stream
-	DefaultStream bool
-	mu            sync.Mutex
+	BufferSize int
+	streams    map[string]*Stream
+	mu         sync.Mutex
 }
 
 // New will create a server and setup defaults
 func New() *Server {
 	return &Server{
-		BufferSize:    DefaultBufferSize,
-		streams:       make(map[string]*Stream),
-		DefaultStream: false,
+		BufferSize: DefaultBufferSize,
+		streams:    make(map[string]*Stream),
 	}
 }
 
@@ -35,40 +31,6 @@ func (s *Server) Close() {
 	for id := range s.streams {
 		s.streams[id].quit <- true
 		delete(s.streams, id)
-	}
-}
-
-// HTTPHandler serves a new connection with events for a given stream
-func (s *Server) HTTPHandler(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-
-	// Get the streamID from
-	streamID := r.URL.Query().Get("streamID")
-	sub := s.getStream(streamID).addSubscriber()
-	defer sub.Close()
-
-	if streamID == "" && !s.DefaultStream {
-		http.Error(w, "stream not found", http.StatusInternalServerError)
-		return
-	}
-
-	notify := w.(http.CloseNotifier).CloseNotify()
-	go func() {
-		<-notify
-		sub.Close()
-	}()
-	for {
-		fmt.Fprintf(w, "data: %s\n\n", <-sub.Connection)
-		flusher.Flush()
 	}
 }
 
