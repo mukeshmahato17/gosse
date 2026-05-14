@@ -33,7 +33,7 @@ func TestServer(t *testing.T) {
 			server.CreateStream("test")
 
 			Convey("It should be stored", func() {
-				So(server.streams["test"], ShouldNotBeNil)
+				So(server.getStream("test"), ShouldNotBeNil)
 			})
 			Convey("It should be started", func() {
 			})
@@ -44,7 +44,7 @@ func TestServer(t *testing.T) {
 			server.RemoveStream("test")
 
 			Convey("It should be removed", func() {
-				So(server.streams["test"], ShouldBeNil)
+				So(server.getStream("test"), ShouldBeNil)
 			})
 		})
 
