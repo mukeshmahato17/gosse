@@ -1,11 +1,22 @@
 package gosse
 
 import (
+	"sync"
 	"testing"
 	"time"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
+
+// This is used because we access stream's subscriber in an unsafe way.
+// This is not exposed publicly, so we define mutex here.
+var mu sync.Mutex
+
+func getSubscribers(s *Stream) int {
+	mu.Lock()
+	defer mu.Unlock()
+	return len(s.subscribers)
+}
 
 func TestStream(t *testing.T) {
 	Convey("Given a new stream", t, func() {
@@ -17,7 +28,7 @@ func TestStream(t *testing.T) {
 			sub := str.addSubscriber()
 
 			Convey("It should be stored", func() {
-				So(len(str.subscribers), ShouldEqual, 1)
+				So(getSubscribers(str), ShouldEqual, 1)
 			})
 			Convey("It should receive message", func() {
 				str.event <- []byte("test")
@@ -32,7 +43,7 @@ func TestStream(t *testing.T) {
 			str.addSubscriber()
 			str.removeSubscriber(0)
 			Convey("It should be removed from the list of subscribers", func() {
-				So(len(str.subscribers), ShouldEqual, 0)
+				So(getSubscribers(str), ShouldEqual, 0)
 			})
 		})
 
@@ -41,7 +52,7 @@ func TestStream(t *testing.T) {
 			sub.close()
 			time.Sleep(time.Millisecond * 100)
 			Convey("It should be removed from the list of subscribers", func() {
-				So(len(str.subscribers), ShouldEqual, 0)
+				So(getSubscribers(str), ShouldEqual, 0)
 			})
 		})
 
@@ -69,7 +80,7 @@ func TestStream(t *testing.T) {
 				// Wait for all subscribers to close
 				time.Sleep(time.Millisecond * 100)
 
-				So(len(str.subscribers), ShouldEqual, 0)
+				So(getSubscribers(str), ShouldEqual, 0)
 			})
 
 		})

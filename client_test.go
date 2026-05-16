@@ -37,7 +37,6 @@ func TestClient(t *testing.T) {
 		c := NewClient(url)
 
 		Convey("When connecting to a new stream", func() {
-
 			Convey("It should receive events", func() {
 				events := make(chan []byte)
 				var cErr error

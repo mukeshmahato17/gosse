@@ -48,6 +48,27 @@ func (c *Client) Subscribe(stream string, handler func(msg *Event)) error {
 	}
 }
 
+func (c *Client) SubscribeChan(stream string, ch chan *Event) error {
+	resp, err := c.request(stream)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	reader := bufio.NewReader(resp.Body)
+
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			return err
+		}
+		msg := processEvent(line)
+		if msg != nil {
+			ch <- msg
+		}
+	}
+}
+
 func (c *Client) request(stream string) (*http.Response, error) {
 	req, err := http.NewRequest("GET", c.URL, nil)
 	if err != nil {

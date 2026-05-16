@@ -26,17 +26,6 @@ func newStream(bufSize int) *Stream {
 	}
 }
 
-// addSubscriber will create a new subscriber to a stream
-func (str *Stream) addSubscriber() *Subscriber {
-	sub := &Subscriber{
-		quit:       str.deregister,
-		connection: make(chan []byte, 64),
-	}
-
-	str.register <- sub
-	return sub
-}
-
 func (str *Stream) run() {
 	go func(s *Stream) {
 		for {
@@ -71,6 +60,17 @@ func (str *Stream) run() {
 			}
 		}
 	}(str)
+}
+
+// addSubscriber will create a new subscriber to a stream
+func (str *Stream) addSubscriber() *Subscriber {
+	sub := &Subscriber{
+		quit:       str.deregister,
+		connection: make(chan []byte, 64),
+	}
+
+	str.register <- sub
+	return sub
 }
 
 func (str *Stream) removeSubscriber(i int) {
