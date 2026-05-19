@@ -99,11 +99,7 @@ func (c *Client) request(ctx context.Context, stream string) (*http.Response, er
 func processEvent(msg []byte) *Event {
 	e := Event{}
 
-	if len(msg) < 6 {
-		return &e
-	}
-
-	switch h := msg[:6]; {
+	switch h := msg; {
 	case bytes.Contains(h, headerID):
 		e.ID = trimHeader(len(headerID), msg)
 	case bytes.Contains(h, headerData):
