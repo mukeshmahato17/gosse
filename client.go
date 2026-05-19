@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"fmt"
 	"net/http"
 )
 
@@ -18,6 +17,7 @@ var (
 type Client struct {
 	URL        string
 	Connection *http.Client
+	Header     map[string]string
 }
 
 func NewClient(url string) *Client {
@@ -66,6 +66,7 @@ func (c *Client) SubscribeChan(ctx context.Context, stream string, ch chan *Even
 	for {
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
+			close(ch)
 			return err
 		}
 		msg := processEvent(line)
@@ -89,15 +90,15 @@ func (c *Client) request(ctx context.Context, stream string) (*http.Response, er
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Connection", "keep-alive")
 
-	resp, err := c.Connection.Do(req)
-	if err != nil {
-		return nil, err
+	for k, v := range c.Header {
+		req.Header.Set(k, v)
 	}
-	return resp, nil
+
+	return c.Connection.Do(req)
 }
 
 func processEvent(msg []byte) *Event {
-	e := Event{}
+	var e Event
 
 	switch h := msg; {
 	case bytes.Contains(h, headerID):
@@ -109,7 +110,7 @@ func processEvent(msg []byte) *Event {
 	case bytes.Contains(h, headerError):
 		e.Error = trimHeader(len(headerError), msg)
 	default:
-		fmt.Println(bytes.Contains(h, headerData))
+		return nil
 	}
 
 	return &e

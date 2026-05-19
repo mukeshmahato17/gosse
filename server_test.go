@@ -48,7 +48,7 @@ func TestServer(t *testing.T) {
 			})
 		})
 
-		Convey("When publishing to a stream", func() {
+		Convey("When publishing to a stream that already exists", func() {
 			server.CreateStream("test")
 			stream := server.getStream("test")
 			sub := stream.addSubscriber()
@@ -58,6 +58,13 @@ func TestServer(t *testing.T) {
 				msg, err := wait(sub.connection, time.Second)
 				So(err, ShouldBeNil)
 				So(string(msg), ShouldEqual, "test")
+			})
+		})
+
+		Convey("when publishing to a stream that doesnot exists", func() {
+			server.Publish("test", []byte("test"))
+			Convey("It must not cause an error", func() {
+				So(func() { server.Publish("test", []byte("test")) }, ShouldNotPanic)
 			})
 		})
 	})
