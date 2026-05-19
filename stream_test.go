@@ -40,8 +40,12 @@ func TestStream(t *testing.T) {
 		})
 
 		Convey("When removing a subscriber", func() {
-			str.addSubscriber()
-			str.removeSubscriber(0)
+			sub := str.addSubscriber()
+			str.removeSubscriber(sub) // Pass the pointer object instead of '0'
+
+			// Give the background loop a brief moment to process the deregister channel channel event
+			time.Sleep(time.Millisecond * 10)
+
 			Convey("It should be removed from the list of subscribers", func() {
 				So(getSubscribers(str), ShouldEqual, 0)
 			})

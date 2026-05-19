@@ -6,9 +6,10 @@ import (
 )
 
 func (s *Server) HTTPHandler(w http.ResponseWriter, r *http.Request) {
-	flusher, err := w.(http.Flusher)
-	if !err {
-		http.Error(w, "Stream Unsupported!", http.StatusInternalServerError)
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming Unsupported!", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -27,15 +28,29 @@ func (s *Server) HTTPHandler(w http.ResponseWriter, r *http.Request) {
 	sub := stream.addSubscriber()
 	defer sub.close()
 
-	notify := w.(http.CloseNotifier).CloseNotify()
-	go func() {
-		<-notify
-		sub.close()
-	}()
+	// Extract the request context to monitor for client disconnection or server shutdown
+	ctx := r.Context()
 
-	// Push events to client
+	// Push events to client safely
 	for {
-		fmt.Fprintf(w, "data: %s\n\n", <-sub.connection)
-		flusher.Flush()
+		select {
+		case <-ctx.Done():
+			// Client disconnected or server is shutting down. Exit cleanly!
+			return
+
+		case msg, open := <-sub.connection:
+			if !open {
+				// Subscriber channel was closed elsewhere
+				return
+			}
+
+			// Write event payload
+			_, err := fmt.Fprintf(w, "data: %s\n\n", msg)
+			if err != nil {
+				// If writing fails (client vanished), stop processing
+				return
+			}
+			flusher.Flush()
+		}
 	}
 }

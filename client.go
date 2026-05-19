@@ -3,6 +3,7 @@ package gosse
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 )
@@ -26,8 +27,8 @@ func NewClient(url string) *Client {
 	}
 }
 
-func (c *Client) Subscribe(stream string, handler func(msg *Event)) error {
-	resp, err := c.request(stream)
+func (c *Client) Subscribe(ctx context.Context, stream string, handler func(msg *Event)) error {
+	resp, err := c.request(ctx, stream)
 	if err != nil {
 		return err
 	}
@@ -36,6 +37,11 @@ func (c *Client) Subscribe(stream string, handler func(msg *Event)) error {
 	reader := bufio.NewReader(resp.Body)
 
 	for {
+		// if the context is canceled outside, exit te loop immidiately
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			return err
@@ -48,8 +54,8 @@ func (c *Client) Subscribe(stream string, handler func(msg *Event)) error {
 	}
 }
 
-func (c *Client) SubscribeChan(stream string, ch chan *Event) error {
-	resp, err := c.request(stream)
+func (c *Client) SubscribeChan(ctx context.Context, stream string, ch chan *Event) error {
+	resp, err := c.request(ctx, stream)
 	if err != nil {
 		return err
 	}
@@ -69,8 +75,8 @@ func (c *Client) SubscribeChan(stream string, ch chan *Event) error {
 	}
 }
 
-func (c *Client) request(stream string) (*http.Response, error) {
-	req, err := http.NewRequest("GET", c.URL, nil)
+func (c *Client) request(ctx context.Context, stream string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.URL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +90,9 @@ func (c *Client) request(stream string) (*http.Response, error) {
 	req.Header.Set("Connection", "keep-alive")
 
 	resp, err := c.Connection.Do(req)
+	if err != nil {
+		return nil, err
+	}
 	return resp, nil
 }
 

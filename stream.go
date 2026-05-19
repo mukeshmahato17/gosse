@@ -1,7 +1,5 @@
 package gosse
 
-import "fmt"
-
 type Stream struct {
 	subscribers []*Subscriber
 	register    chan *Subscriber
@@ -15,7 +13,6 @@ type StreamRegistration struct {
 	stream *Stream
 }
 
-// newStream returns a new stream
 func newStream(bufSize int) *Stream {
 	return &Stream{
 		subscribers: make([]*Subscriber, 0),
@@ -29,32 +26,29 @@ func newStream(bufSize int) *Stream {
 func (str *Stream) run() {
 	go func(s *Stream) {
 		for {
-			fmt.Println(len(s.subscribers))
 			select {
-			// Add new subscriber
+			// Add new subscriber safely inside the loop
 			case subscriber := <-s.register:
 				s.subscribers = append(s.subscribers, subscriber)
 
-			// Remove closed subscriber
+			// Remove closed subscriber safely inside the loop
 			case subscriber := <-s.deregister:
 				i := s.getSubIndex(subscriber)
 				if i != -1 {
-					s.removeSubscriber(i)
+					s.executeRemoval(i)
 				}
 
-				// Publish the event to subscribers
+			// Publish events to all active subscribers
 			case event := <-s.event:
-				fmt.Println("got event")
 				for i := range s.subscribers {
-					fmt.Printf("publishing to subscriber %d\n", i)
 					s.subscribers[i].connection <- event
 				}
 
-			// Shutdown if server closes
+			// Shutdown server and purge everything cleanly
 			case <-s.quit:
-				// remove connections
-				for i := range s.subscribers {
-					s.removeSubscriber(i)
+				// Loop BACKWARDS to safely delete elements without breaking index paths
+				for i := len(s.subscribers) - 1; i >= 0; i-- {
+					s.executeRemoval(i)
 				}
 				return
 			}
@@ -62,7 +56,6 @@ func (str *Stream) run() {
 	}(str)
 }
 
-// addSubscriber will create a new subscriber to a stream
 func (str *Stream) addSubscriber() *Subscriber {
 	sub := &Subscriber{
 		quit:       str.deregister,
@@ -73,9 +66,15 @@ func (str *Stream) addSubscriber() *Subscriber {
 	return sub
 }
 
-func (str *Stream) removeSubscriber(i int) {
-	close(str.subscribers[i].connection)
-	str.subscribers = append(str.subscribers[:i], str.subscribers[i+1:]...)
+// Public API triggers a channel event so the background loop handles the delete
+func (str *Stream) removeSubscriber(sub *Subscriber) {
+	str.deregister <- sub
+}
+
+// Internal helper ONLY called inside the select-loop to mutate the slice safely
+func (s *Stream) executeRemoval(i int) {
+	close(s.subscribers[i].connection)
+	s.subscribers = append(s.subscribers[:i], s.subscribers[i+1:]...)
 }
 
 func (str *Stream) getSubIndex(sub *Subscriber) int {

@@ -1,6 +1,7 @@
 package gosse
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,52 +10,72 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 )
 
-var url string
-
-func setup() {
+func TestClient(t *testing.T) {
+	// Initialize server components cleanly inside the test
 	s := New()
+	s.CreateStream("test") // Match the stream name we intend to use
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/events", s.HTTPHandler)
 	server := httptest.NewServer(mux)
-	url = server.URL + "/events"
+	defer server.Close() // Good practice to prevent leaking ports
 
-	s.CreateStream("stream")
+	testURL := server.URL + "/events"
 
-	// Send continuous string of events to client
-	go func(s *Server) {
+	// Start publishing mock data in the background
+	stopPublish := make(chan struct{})
+	go func() {
 		for {
-			s.Publish("test", []byte("ping"))
-			time.Sleep(500 * time.Millisecond)
+			select {
+			case <-stopPublish:
+				return
+			default:
+				// Safely publish to the stream we actually created
+				s.Publish("test", []byte("ping\n"))
+				time.Sleep(100 * time.Millisecond)
+			}
 		}
-	}(s)
-}
-
-func TestClient(t *testing.T) {
-	setup()
+	}()
+	defer close(stopPublish)
 
 	Convey("Given a new client", t, func() {
-		c := NewClient(url)
+		c := NewClient(testURL)
 
 		Convey("When connecting to a new stream", func() {
 			Convey("It should receive events", func() {
-				events := make(chan []byte)
-				var cErr error
-				go func(cErr error) {
-					cErr = c.Subscribe("test", func(msg *Event) {
-						if msg.Data != nil {
+				events := make(chan []byte, 10)
+				errChan := make(chan error, 1)
+
+				// Create a cancelable context context for our subscriber lifecycle
+				subCtx, cancelSub := context.WithCancel(context.Background())
+				defer cancelSub() // Safeguard cleanup
+
+				// Run subscription in background passing the context
+				go func() {
+					err := c.Subscribe(subCtx, "test", func(msg *Event) {
+						if msg != nil && len(msg.Data) > 0 {
 							events <- msg.Data
-							return
 						}
 					})
-				}(cErr)
+					if err != nil {
+						errChan <- err
+					}
+				}()
 
+				// Verify we can pull 5 sequential pings safely
 				for i := 0; i < 5; i++ {
-					msg, err := wait(events, time.Second)
-					So(err, ShouldBeNil)
-					So(string(msg), ShouldEqual, "ping")
+					select {
+					case msg := <-events:
+						So(string(msg), ShouldEqual, "ping")
+					case err := <-errChan:
+						t.Fatalf("Subscription failed unexpectedly: %v", err)
+					case <-time.After(2 * time.Second):
+						t.Fatal("Timeout waiting for stream event")
+					}
 				}
-				So(cErr, ShouldBeNil)
+
+				// CRITICAL FIX: Kill the subscriber connection loop right here!
+				cancelSub()
 			})
 		})
 	})
