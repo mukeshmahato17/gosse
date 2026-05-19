@@ -10,8 +10,11 @@ const (
 )
 
 type Server struct {
+	// Specifies the size of the message buffer for each stream
 	BufferSize int
 	streams    map[string]*Stream
+	// Enable auto stream creation when clients connect
+	AutoStream bool
 	mu         sync.Mutex
 }
 
@@ -20,6 +23,7 @@ func New() *Server {
 	return &Server{
 		BufferSize: DefaultBufferSize,
 		streams:    make(map[string]*Stream),
+		AutoStream: false,
 	}
 }
 
@@ -41,6 +45,10 @@ func (s *Server) CreateStream(id string) *Stream {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.StreamExists(id) {
+		s.getStream(id)
+	}
 
 	// register that stream
 	s.streams[id] = str

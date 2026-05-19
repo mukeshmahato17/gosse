@@ -19,10 +19,11 @@ func (s *Server) HTTPHandler(w http.ResponseWriter, r *http.Request) {
 
 	streamID := r.URL.Query().Get("stream")
 	stream := s.getStream(streamID)
-
-	if stream == nil {
+	if stream == nil && !s.AutoStream {
 		http.Error(w, "Stream not found!", http.StatusInternalServerError)
 		return
+	} else if stream == nil && s.AutoStream {
+		s.CreateStream(streamID)
 	}
 
 	sub := stream.addSubscriber()
@@ -45,7 +46,7 @@ func (s *Server) HTTPHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Write event payload
-			_, err := fmt.Fprintf(w, "data: %s\n\n", msg)
+			_, err := fmt.Fprintf(w, "data: %s\n", msg)
 			if err != nil {
 				// If writing fails (client vanished), stop processing
 				return
